@@ -1,0 +1,4 @@
+/.env
+/passwords.txt
+/requirements/concept.txt
+*/__init__.py

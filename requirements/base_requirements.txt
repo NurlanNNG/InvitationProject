@@ -1,0 +1,27 @@
+fastapi==0.115.0                # или новее, но стабильная
+uvicorn[standard]==0.32.0       # ASGI сервер
+python-dotenv==1.0.1
+pydantic-settings==2.5.2        # для удобной работы с .env
+
+# База данных + ORM
+sqlalchemy[asyncio]==2.0.35
+asyncpg==0.30.0                 # драйвер PostgreSQL async
+alembic==1.13.3                 # миграции
+
+# Аутентификация
+pwdlib[bcrypt]==0.2.0     # or latest version
+bcrypt>=5.0.0             # optional, but saf
+python-jose[cryptography]==3.3.0   # JWT
+PyJWT==2.9.0
+
+# Валидация и утилиты
+email-validator==2.2.0
+python-multipart==0.0.12        # для загрузки файлов (фото)
+
+# Для платежей (выберем один из вариантов позже)
+# httpx==0.27.2                 # для запросов к платежному API
+# или requests==2.32.3
+
+# Разработка / отладка
+pytest==8.3.3
+pytest-asyncio==0.24.0
