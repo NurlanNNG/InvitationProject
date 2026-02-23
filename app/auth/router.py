@@ -5,9 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import timedelta
 
-from config import settings
 from app.database import get_db
-from models import User
+from app.config import settings
+from .models import User
 from app.auth.schemas import (
     UserCreate, UserOut, Token, RefreshTokenRequest
 )
