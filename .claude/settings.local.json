@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(cd /c/MyProjects/InvitationProject && source .venv/Scripts/activate && alembic upgrade head 2>&1)"
+    ]
+  }
+}

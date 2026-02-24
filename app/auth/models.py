@@ -18,6 +18,7 @@ class User(Base):
 
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False,)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now(), nullable=True,)

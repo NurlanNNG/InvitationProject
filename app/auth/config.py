@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Union
+from typing import Any, Union, Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -16,13 +15,11 @@ from app.auth.schemas import TokenData
 from app.config import settings
 from app.database import get_db
 
-# OAuth2 scheme (expects "Authorization: Bearer <access_token>")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
-# Password hashing
+# OAuth2 scheme — auto_error=False so we can fall back to cookies
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
-# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-# pwd_context = PasswordHash(schemes=["bcrypt"])
-pwd_context = PasswordHash.recommended() # argon2
+# Password hashing (Argon2)
+pwd_context = PasswordHash.recommended()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -43,10 +40,7 @@ def create_access_token(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
     to_encode = {"exp": expire, "sub": str(subject)}
-    encoded_jwt = jwt.encode(
-        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
-    )
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
 def create_refresh_token(
@@ -59,14 +53,29 @@ def create_refresh_token(
             days=settings.REFRESH_TOKEN_EXPIRE_DAYS
         )
     to_encode = {"exp": expire, "sub": str(subject), "type": "refresh"}
-    encoded_jwt = jwt.encode(
-        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+async def _get_token(
+    request: Request,
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
+) -> str:
+    """Try Authorization: Bearer header first, then fall back to access_token cookie."""
+    if bearer_token:
+        return bearer_token
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        return cookie_token
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Не авторизован",
+        headers={"WWW-Authenticate": "Bearer"},
     )
-    return encoded_jwt
+
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db)
+    token: str = Depends(_get_token),
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -78,7 +87,7 @@ async def get_current_user(
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM]
+            algorithms=[settings.JWT_ALGORITHM],
         )
         username: str = payload.get("sub")
         if username is None:
@@ -87,7 +96,6 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    # Query user from DB
     result = await db.execute(
         select(User).where(User.username == token_data.username)
     )
@@ -98,7 +106,7 @@ async def get_current_user(
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Пользователь неактивен"
+            detail="Пользователь неактивен",
         )
 
     return user

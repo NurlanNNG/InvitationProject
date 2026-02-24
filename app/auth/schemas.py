@@ -17,6 +17,7 @@ class UserOut(UserBase):
     email: Optional[EmailStr] = None
     is_active: bool
     is_locked: bool
+    locked_until: Optional[datetime] = None
     failed_login_attempts: int
     created_at: datetime
 
@@ -26,7 +27,7 @@ class UserOut(UserBase):
 
 class Token(BaseModel):
     access_token: str
-    refresh_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
 
 
