@@ -2,3 +2,17 @@
 /passwords.txt
 /requirements/concept.txt
 */__init__.py
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Project specific (если нужно)
