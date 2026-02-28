@@ -1,0 +1,516 @@
+=== TABLES ===
+--- Table 1 ---
+Версия документа | 1.0
+Дата | 2026
+Стек (Backend) | FastAPI, PostgreSQL, Redis, Groq AI
+Стек (Frontend) | Next.js 14, TypeScript, Tailwind CSS
+Авторизация | JWT (Access + Refresh tokens)
+
+--- Table 2 ---
+Язык интерфейса | Казахский / Русский / Английский
+Платёжная система | Kaspi Pay (KZT)
+AI-модель | Groq API — llama-3.3-70b (бесплатный tier)
+Хранение файлов | Cloudflare R2 или AWS S3
+Карты | 2GIS (текстовое поле + ссылка на карту)
+Лимит редактирования | 3 дня с момента создания приглашения
+
+--- Table 3 ---
+Роль | Возможности
+Гость (без авторизации) | Просмотр главной страницы, каталог шаблонов (демо), конструктор без сохранения, просмотр опубликованного приглашения по ссылке, отправка RSVP-ответа
+Авторизованный пользователь | Всё из «Гость» + создание/редактирование/удаление приглашений, AI-генерация текста, загрузка фото, оплата и публикация, личный кабинет с RSVP-аналитикой
+
+--- Table 4 ---
+Схема отображает взаимодействие основных компонентов системы. Клиент (браузер) общается с Next.js фронтендом, который через API Gateway взаимодействует с FastAPI бэкендом.
+
+--- Table 5 ---
+┌─────────────────────────────────────────────────────────┐
+│                    КЛИЕНТ (Браузер)                     │
+│              Next.js 14 + TypeScript                    │
+│         React Components + Tailwind CSS                 │
+└──────────────────────────┬──────────────────────────────┘
+                           │ HTTPS / REST API
+┌──────────────────────────▼──────────────────────────────┐
+│                  BACKEND (FastAPI)                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐ │
+│  │   Auth   │  │Invitation│  │   RSVP   │  │Payment │ │
+│  │ Service  │  │ Service  │  │ Service  │  │Service │ │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───┬────┘ │
+│       └─────────────┴──────────────┴────────────┘      │
+│                    Repository Layer                     │
+└──────┬──────────────────────────┬──────────────────────┘
+       │                          │
+┌──────▼──────┐      ┌────────────▼──────────────────────┐
+│  PostgreSQL  │      │           Redis                   │
+│  (основная   │      │  (refresh tokens + rate limit)    │
+│    БД)      │      └───────────────────────────────────┘
+└─────────────┘
+
+┌─────────────────────┐    ┌──────────────────────┐
+│   Groq API          │    │  Cloudflare R2 / S3  │
+│  (AI-генерация      │    │  (хранение фото)     │
+│   текста)           │    └──────────────────────┘
+└─────────────────────┘
+
+--- Table 6 ---
+/ (Главная)
+├── /templates              — Каталог шаблонов
+├── /auth
+│   ├── /login              — Страница входа
+│   └── /register           — Страница регистрации
+├── /create                 — Конструктор приглашения
+│   └── /create/[step]      — Пошаговая форма (step 1-4)
+├── /dashboard              — Личный кабинет [AUTH]
+│   ├── /dashboard/invitations     — Список приглашений
+│   ├── /dashboard/invitations/[id] — Управление приглашением
+│   └── /dashboard/guests/[id]     — RSVP гости
+├── /invite/[slug]          — Публичная страница приглашения
+└── /payment/[id]           — Страница оплаты [AUTH]
+
+--- Table 7 ---
+[Пользователь]           [Backend]            [Внешние сервисы]
+       │                       │                       │
+       ├── Регистрация ──────► │                       │
+       │◄── JWT токены ──────── │                       │
+       │                       │                       │
+       ├── Выбор шаблона ─────► │                       │
+       │◄── GET /templates ───── │                       │
+       │                       │                       │
+       ├── Заполнить форму ───► │                       │
+       ├── [AI Генерация] ─────► ├──── Groq API ────────►│
+       │◄── Текст приглашения ── │◄──── Ответ ───────────┤
+       │                       │                       │
+       ├── POST /invitations ──► │                       │
+       │◄── {id, status:draft} ── │                       │
+       │                       │                       │
+       ├── Загрузить фото ─────► ├──── S3/R2 Upload ────►│
+       │                       │                       │
+       ├── POST /payment ──────► │                       │
+       │◄── payment_url ─────── │◄──── Kaspi API ───────┤
+       │                       │                       │
+  [Оплата Kaspi]               │                       │
+       │                       ├◄── Webhook: paid ─────┤
+       │                       ├── status = published   │
+       │◄── Ссылка /invite/slug │                       │
+       │                       │                       │
+
+--- Table 8 ---
+[Гость]                      [Backend]
+     │                              │
+     ├── GET /invite/{slug} ───────►│
+     │   (без авторизации)          │
+     │◄── Данные приглашения ────────┤
+     │                              │
+     │   [Заполняет форму]          │
+     │   - Имя                      │
+     │   - Телефон (опционально)    │
+     │   - Приду / Не приду         │
+     │   - Кол-во человек           │
+     │   - Пожелание                │
+     │                              │
+     ├── POST /invite/{slug}/rsvp ──►│
+     │                              ├── Rate limit check (Redis)
+     │                              ├── Dedup check (phone)
+     │                              ├── Save rsvp_responses
+     │◄── 200 OK ────────────────────┤
+     │                              │
+  [Организатор]                    │
+     ├── GET /my/invitations/{id}/guests ►│
+     │◄── Список ответов ────────────┤
+
+--- Table 9 ---
+Поле | Тип | Ограничения | Описание
+id | UUID | PK, DEFAULT gen_random_uuid() | Уникальный идентификатор
+login | VARCHAR(100) | UNIQUE, NOT NULL | Уникальный логин для входа
+email | VARCHAR(255) | UNIQUE, NULLABLE | Email (необязателен)
+full_name | VARCHAR(255) | NOT NULL | Полное имя пользователя
+password_hash | VARCHAR(255) | NOT NULL | Хэш пароля (bcrypt)
+is_active | BOOLEAN | DEFAULT true | Активен ли аккаунт
+language | VARCHAR(10) | DEFAULT 'ru' | Язык интерфейса: kk/ru/en
+created_at | TIMESTAMP | DEFAULT now() | Дата регистрации
+updated_at | TIMESTAMP | DEFAULT now() | Дата последнего обновления
+
+--- Table 10 ---
+Хранит хэши refresh-токенов для контроля сессий. Позволяет реализовать безопасный logout и отзыв всех сессий пользователя. Access-токен (30 мин) и refresh-токен (10 часов) хранятся в httpOnly cookies.
+
+--- Table 11 ---
+Поле | Тип | Ограничения | Описание
+id | UUID | PK | Идентификатор
+user_id | UUID | FK → users, NOT NULL | Пользователь
+token_hash | VARCHAR(255) | UNIQUE, NOT NULL | SHA-256 хэш refresh-токена
+device_info | TEXT | NULLABLE | User-Agent браузера/устройства
+ip_address | INET | NULLABLE | IP адрес при создании
+expires_at | TIMESTAMP | NOT NULL | Дата истечения (now + 10ч)
+revoked_at | TIMESTAMP | NULLABLE | NULL = активен, иначе — отозван
+created_at | TIMESTAMP | DEFAULT now() | Дата создания
+
+--- Table 12 ---
+Поле | Тип | Ограничения | Описание
+id | SERIAL | PK | Идентификатор
+slug | VARCHAR(50) | UNIQUE, NOT NULL | Код: wedding, birthday, sundet_toi...
+name_kk | VARCHAR(100) | NOT NULL | Название на казахском
+name_ru | VARCHAR(100) | NOT NULL | Название на русском
+name_en | VARCHAR(100) | NULLABLE | Название на английском
+icon_url | TEXT | NULLABLE | URL иконки категории
+is_active | BOOLEAN | DEFAULT true | Показывать ли категорию
+sort_order | INTEGER | DEFAULT 0 | Порядок сортировки
+
+--- Table 13 ---
+Поле | Тип | Ограничения | Описание
+id | UUID | PK | Идентификатор
+category_id | INTEGER | FK → event_categories | Категория мероприятия
+name_kk | VARCHAR(150) | NOT NULL | Название на казахском
+name_ru | VARCHAR(150) | NOT NULL | Название на русском
+preview_url | TEXT | NOT NULL | Полное превью шаблона
+thumbnail_url | TEXT | NULLABLE | Миниатюра для каталога
+config | JSONB | NOT NULL | Цвета, шрифты, орнаменты, блоки
+is_premium | BOOLEAN | DEFAULT false | Платный шаблон
+is_active | BOOLEAN | DEFAULT true | Активен ли шаблон
+sort_order | INTEGER | DEFAULT 0 | Порядок в каталоге
+created_at | TIMESTAMP | DEFAULT now() | Дата добавления
+
+--- Table 14 ---
+{ "primary_color": "#C8A96E",
+  "secondary_color": "#F5F0E8",
+  "font_heading": "Playfair Display",
+  "ornament_style": "kazakh_pattern_1",
+  "blocks": ["hero","event_info","location","gallery","rsvp"] }
+
+--- Table 15 ---
+Поле | Тип | Ограничения | Описание
+id | UUID | PK | Идентификатор
+user_id | UUID | FK → users, NOT NULL | Создатель приглашения
+template_id | UUID | FK → templates | Выбранный шаблон
+category_id | INTEGER | FK → event_categories | Категория мероприятия
+slug | VARCHAR(100) | UNIQUE, NOT NULL | URL: /invite/{slug}
+title | VARCHAR(255) | NOT NULL | Заголовок приглашения
+status | ENUM | draft/published/expired/archived | Текущий статус
+is_paid | BOOLEAN | DEFAULT false | Оплачено ли
+editable_until | TIMESTAMP | NOT NULL | created_at + 3 дня
+published_at | TIMESTAMP | NULLABLE | Дата публикации
+expires_at | TIMESTAMP | NULLABLE | Дата истечения публикации
+created_at | TIMESTAMP | DEFAULT now() | Дата создания
+updated_at | TIMESTAMP | DEFAULT now() | Дата последнего изменения
+
+--- Table 16 ---
+Связана с invitations как 1:1. Выделена отдельно для чистоты структуры и поддержки гибких custom_fields для разных типов мероприятий.
+
+--- Table 17 ---
+Поле | Тип | Ограничения | Описание
+id | UUID | PK | Идентификатор
+invitation_id | UUID | FK → invitations, UNIQUE | Приглашение
+organizer_name | VARCHAR(255) | NOT NULL | Имя организатора / семьи
+honoree_name | VARCHAR(255) | NULLABLE | Имя именинника / невесты и жениха
+invitation_text | TEXT | NULLABLE | Текст приглашения (ручной или AI)
+event_description | TEXT | NULLABLE | Дополнительное описание
+event_date | DATE | NOT NULL | Дата мероприятия
+event_time | TIME | NULLABLE | Время начала
+event_end_time | TIME | NULLABLE | Время окончания
+dress_code | VARCHAR(255) | NULLABLE | Дресс-код
+venue_name | VARCHAR(255) | NULLABLE | Название места (ресторан, зал)
+venue_address | TEXT | NULLABLE | Адрес (текстовый)
+venue_lat | DECIMAL(10,8) | NULLABLE | Широта (для 2GIS)
+venue_lng | DECIMAL(11,8) | NULLABLE | Долгота (для 2GIS)
+venue_map_url | TEXT | NULLABLE | Прямая ссылка на 2GIS / Google Maps
+contact_phone | VARCHAR(20) | NULLABLE | Контактный телефон
+contact_name | VARCHAR(255) | NULLABLE | Контактное лицо
+additional_info | TEXT | NULLABLE | Парковка, прочие детали
+custom_fields | JSONB | NULLABLE | Гибкие поля под специфику события
+
+--- Table 18 ---
+{ "bride_name": "Айгерим",
+  "groom_name": "Нурлан",
+  "bride_family": "Семья Сейткали",
+  "groom_family": "Семья Ахметов",
+  "nikah_time": "12:00",
+  "ceremony_time": "15:00",
+  "banquet_time": "18:00" }
+
+--- Table 19 ---
+Поле | Тип | Ограничения | Описание
+id | UUID | PK | Идентификатор
+invitation_id | UUID | FK → invitations | Приглашение
+media_type | ENUM | photo/cover/background | Тип медиа
+url | TEXT | NOT NULL | URL файла в S3/R2
+thumbnail_url | TEXT | NULLABLE | Миниатюра (для круговой галереи)
+caption | VARCHAR(255) | NULLABLE | Подпись к фото
+display_style | ENUM | circle/square/rectangle | Стиль отображения
+sort_order | INTEGER | DEFAULT 0 | Порядок в галерее
+created_at | TIMESTAMP | DEFAULT now() | Дата загрузки
+
+--- Table 20 ---
+Каждое приглашение может иметь свой набор вопросов. При создании автоматически добавляются стандартные вопросы: приду/не приду, количество человек, аллергии, нужен ли трансфер.
+
+--- Table 21 ---
+Поле | Тип | Ограничения | Описание
+id | UUID | PK | Идентификатор
+invitation_id | UUID | FK → invitations | Приглашение
+question_text_kk | TEXT | NOT NULL | Вопрос на казахском
+question_text_ru | TEXT | NOT NULL | Вопрос на русском
+question_type | ENUM | boolean/number/text/select | Тип ответа
+options | JSONB | NULLABLE | Варианты ответа (для select)
+is_required | BOOLEAN | DEFAULT false | Обязателен ли ответ
+sort_order | INTEGER | DEFAULT 0 | Порядок вопроса
+
+--- Table 22 ---
+Поле | Тип | Ограничения | Описание
+id | UUID | PK | Идентификатор
+invitation_id | UUID | FK → invitations, NOT NULL | Приглашение
+guest_name | VARCHAR(255) | NOT NULL | Имя гостя
+guest_phone | VARCHAR(20) | NULLABLE | Телефон (для дедупликации)
+will_attend | BOOLEAN | NOT NULL | Придёт или нет
+guest_count | INTEGER | DEFAULT 1 | Количество человек
+message | TEXT | NULLABLE | Пожелание организатору
+answers | JSONB | NULLABLE | {question_id: answer}
+ip_address | INET | NULLABLE | IP для rate limiting
+responded_at | TIMESTAMP | DEFAULT now() | Дата ответа
+
+--- Table 23 ---
+Поле | Тип | Ограничения | Описание
+id | SERIAL | PK | Идентификатор
+name_kk | VARCHAR(100) | NOT NULL | Название на казахском
+name_ru | VARCHAR(100) | NOT NULL | Название на русском
+price | DECIMAL(10,2) | NOT NULL | Цена в тенге
+currency | VARCHAR(3) | DEFAULT 'KZT' | Валюта
+max_guests | INTEGER | NULLABLE | NULL = безлимит
+max_photos | INTEGER | DEFAULT 10 | Лимит загружаемых фото
+validity_days | INTEGER | DEFAULT 30 | Срок публикации в днях
+features | JSONB | NULLABLE | Список возможностей плана
+is_active | BOOLEAN | DEFAULT true | Активен ли план
+
+--- Table 24 ---
+Поле | Тип | Ограничения | Описание
+id | UUID | PK | Идентификатор
+user_id | UUID | FK → users, NOT NULL | Плательщик
+invitation_id | UUID | FK → invitations | Приглашение
+plan_id | INTEGER | FK → payment_plans | Тарифный план
+amount | DECIMAL(10,2) | NOT NULL | Сумма в тенге
+currency | VARCHAR(3) | DEFAULT 'KZT' | Валюта
+status | ENUM | pending/success/failed/refunded | Статус платежа
+payment_method | VARCHAR(50) | NULLABLE | kaspi / card
+external_payment_id | VARCHAR(255) | NULLABLE | ID транзакции Kaspi
+paid_at | TIMESTAMP | NULLABLE | Дата успешной оплаты
+created_at | TIMESTAMP | DEFAULT now() | Дата создания
+
+--- Table 25 ---
+Метод | Путь | Описание | Auth
+POST | /auth/register | Регистрация нового пользователя | Нет
+POST | /auth/login | Вход (login + password) | Нет
+POST | /auth/refresh | Обновить access token | Cookie
+POST | /auth/logout | Выход, отзыв refresh token | Да
+GET | /auth/me | Данные текущего пользователя | Да
+PUT | /auth/me | Изменить full_name, email, пароль | Да
+
+--- Table 26 ---
+Метод | Путь | Описание | Auth
+GET | /categories | Список всех категорий мероприятий | Нет
+GET | /templates | Каталог шаблонов (фильтр: ?category=wedding) | Нет
+GET | /templates/:id | Детали шаблона | Нет
+GET | /invitations/:slug | Публичная страница приглашения | Нет
+POST | /invitations/:slug/rsvp | Отправить RSVP ответ | Нет
+
+--- Table 27 ---
+Метод | Путь | Описание | Auth
+GET | /my/invitations | Список моих приглашений | Да
+POST | /my/invitations | Создать новое приглашение | Да
+GET | /my/invitations/:id | Получить приглашение по ID | Да
+PUT | /my/invitations/:id | Редактировать (до editable_until) | Да
+DELETE | /my/invitations/:id | Удалить приглашение | Да
+GET | /my/invitations/:id/guests | Список RSVP гостей | Да
+POST | /my/invitations/:id/media | Загрузить фото | Да
+DELETE | /my/invitations/:id/media/:mediaId | Удалить фото | Да
+
+--- Table 28 ---
+Метод | Путь | Описание | Auth
+POST | /ai/generate-text | Генерация текста через Groq API | Да
+
+--- Table 29 ---
+{ "category": "wedding",
+  "organizer_name": "Семья Ахметовых",
+  "honoree_name": "Нурлан и Айгерим",
+  "event_date": "2025-06-15",
+  "venue_name": "Ресторан Алтын Орда",
+  "language": "ru",
+  "custom_fields": { "bride_name": "Айгерим", "groom_name": "Нурлан" } }
+
+--- Table 30 ---
+Метод | Путь | Описание | Auth
+GET | /payment/plans | Список тарифных планов | Нет
+POST | /payment/create | Создать платёж (→ Kaspi URL) | Да
+POST | /payment/webhook | Webhook от Kaspi (изменение статуса) | Нет
+GET | /payment/history | История платежей пользователя | Да
+
+--- Table 31 ---
+backend/
+├── app/
+│   ├── api/
+│   │   └── v1/
+│   │       ├── __init__.py
+│   │       ├── auth.py          # /auth/*
+│   │       ├── categories.py    # /categories
+│   │       ├── templates.py     # /templates
+│   │       ├── invitations.py   # /my/invitations + public
+│   │       ├── rsvp.py          # /invitations/{slug}/rsvp
+│   │       ├── media.py         # /my/invitations/{id}/media
+│   │       ├── ai.py            # /ai/generate-text
+│   │       └── payments.py      # /payment/*
+│   ├── core/
+│   │   ├── config.py            # Settings (pydantic-settings)
+│   │   ├── security.py          # JWT create/verify, bcrypt
+│   │   ├── dependencies.py      # get_current_user, get_db
+│   │   └── exceptions.py        # Custom HTTP exceptions
+│   ├── models/                  # SQLAlchemy ORM модели
+│   │   ├── user.py
+│   │   ├── invitation.py
+│   │   ├── rsvp.py
+│   │   └── payment.py
+│   ├── schemas/                 # Pydantic схемы (request/response)
+│   │   ├── auth.py
+│   │   ├── invitation.py
+│   │   ├── rsvp.py
+│   │   └── payment.py
+│   ├── services/                # Бизнес-логика
+│   │   ├── auth_service.py
+│   │   ├── invitation_service.py
+│   │   ├── ai_service.py        # Groq API интеграция
+│   │   ├── media_service.py     # S3/R2 загрузка
+│   │   └── payment_service.py
+│   ├── repositories/            # Слой работы с БД
+│   └── db/
+│       ├── base.py              # Base, engine, session
+│       └── init_db.py           # Seed данных
+├── migrations/                  # Alembic
+├── tests/
+├── .env.example
+├── pyproject.toml
+└── Dockerfile
+
+--- Table 32 ---
+Страница / Маршрут | Описание и ключевые компоненты
+/ | Лендинг: Hero-секция, Примеры шаблонов (Карусель), Как это работает (3 шага), CTA-кнопки
+/templates | Каталог шаблонов: фильтр по категории, карточки с превью, кнопка «Выбрать»
+/auth/login | Форма входа: поля login + password, ссылка на регистрацию, валидация
+/auth/register | Форма регистрации: login, full_name, password, confirm_password
+/create | Мастер создания (4 шага): шаг 1 — выбор категории и шаблона, шаг 2 — основные данные, шаг 3 — AI-генерация текста, шаг 4 — загрузка фото, предпросмотр
+/dashboard | Личный кабинет: список приглашений (карточки), кнопка «Создать»
+/dashboard/invitations/[id] | Управление приглашением: статус, ссылка, редактирование (если в срок), кнопка оплаты
+/dashboard/guests/[id] | Аналитика гостей: таблица ответов, счётчики (придут / не придут / всего чел.)
+/invite/[slug] | Публичная страница: оформление по шаблону, данные события, галерея, карта/адрес, форма RSVP
+/payment/[id] | Страница оплаты: выбор тарифа, кнопка «Оплатить через Kaspi»
+
+--- Table 33 ---
+frontend/
+├── app/                         # Next.js App Router
+│   ├── (public)/                # Публичные страницы
+│   │   ├── page.tsx             # Главная /
+│   │   ├── templates/page.tsx   # Каталог
+│   │   └── invite/[slug]/page.tsx # Приглашение
+│   ├── (auth)/                  # Страницы авторизации
+│   │   ├── login/page.tsx
+│   │   └── register/page.tsx
+│   ├── (protected)/             # Защищённые страницы
+│   │   ├── dashboard/page.tsx
+│   │   ├── dashboard/invitations/[id]/page.tsx
+│   │   ├── dashboard/guests/[id]/page.tsx
+│   │   ├── create/page.tsx
+│   │   └── payment/[id]/page.tsx
+│   ├── layout.tsx               # Root layout
+│   └── middleware.ts             # Auth guard
+├── components/
+│   ├── ui/                      # Кнопки, инпуты, модалки
+│   ├── invitation/              # Конструктор
+│   │   ├── StepCategory.tsx
+│   │   ├── StepDetails.tsx
+│   │   ├── StepAIText.tsx       # AI генерация
+│   │   └── StepMedia.tsx
+│   ├── public/                  # Публичная страница
+│   │   ├── InvitationHero.tsx
+│   │   ├── PhotoGallery.tsx
+│   │   ├── EventMap.tsx
+│   │   └── RSVPForm.tsx
+│   └── dashboard/
+│       ├── InvitationCard.tsx
+│       └── GuestTable.tsx
+├── lib/
+│   ├── api.ts                   # Axios instance + interceptors
+│   └── utils.ts
+├── store/                       # Zustand stores
+│   ├── authStore.ts
+│   └── invitationStore.ts
+├── types/                       # TypeScript типы
+└── styles/
+    └── globals.css
+
+--- Table 34 ---
+Провайдер | Groq Cloud (groq.com)
+Модель | llama-3.3-70b-versatile
+Бесплатный лимит | 14 400 запросов / день
+Скорость | 500+ токен/сек (очень быстро)
+Python библиотека | groq (pip install groq)
+Ключ | GROQ_API_KEY в .env
+
+--- Table 35 ---
+System: Ты — помощник по созданию торжественных приглашений.
+  Учитывай казахские культурные традиции. Пиши тепло и торжественно.
+
+User: Создай текст приглашения на [язык].
+  Тип: [Свадьба]. Организатор: [Семья Ахметовых].
+  Жених: [Нурлан], Невеста: [Айгерим].
+  Дата: [15 июня 2025]. Место: [Ресторан Алтын Орда, Алматы].
+  Сделай текст 3-4 абзаца, без технических деталей.
+
+--- Table 36 ---
+Токен | Срок | Хранение
+Access Token | 30 минут | httpOnly cookie (Secure, SameSite=Strict)
+Refresh Token | 10 часов | httpOnly cookie + хэш в БД (refresh_tokens)
+
+--- Table 37 ---
+# База данных
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/invitations
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# JWT
+JWT_SECRET_KEY=your-super-secret-key
+JWT_ACCESS_EXPIRE_MINUTES=30
+JWT_REFRESH_EXPIRE_HOURS=10
+
+# Groq AI
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxx
+GROQ_MODEL=llama-3.3-70b-versatile
+
+# Хранилище файлов (Cloudflare R2 или AWS S3)
+S3_ENDPOINT_URL=https://xxxx.r2.cloudflarestorage.com
+S3_ACCESS_KEY_ID=xxx
+S3_SECRET_ACCESS_KEY=xxx
+S3_BUCKET_NAME=invitations-media
+S3_PUBLIC_URL=https://media.yourdomain.com
+
+# Kaspi Pay
+KASPI_API_KEY=xxx
+KASPI_WEBHOOK_SECRET=xxx
+
+# Приложение
+FRONTEND_URL=https://yourdomain.com
+ENVIRONMENT=production  # development / production
+
+--- Table 38 ---
+№ | Правило | Реализация
+1 | Редактирование 3 дня | editable_until = created_at + 3 дня. PUT → 403 если now() > editable_until
+2 | Шаринг только после оплаты | GET /invite/{slug} → 404 если is_paid = false или status != published
+3 | Дедупликация RSVP | Один guest_phone + invitation_id = одна запись. Повторный запрос обновляет существующий
+4 | Rate limit RSVP | Redis: max 5 ответов с одного IP в час на одно приглашение
+5 | Уникальный slug | Автогенерация: транслит имён + тип + год. При коллизии — добавить случайный суффикс
+6 | Лимит фото по тарифу | При загрузке проверять count(media) < plan.max_photos. При превышении → 400
+7 | Истечение публикации | После expires_at статус меняется на expired (фоновая задача или check при запросе)
+
+--- Table 39 ---
+Этап | Приоритет | Задачи
+1 | Основа | Инициализация FastAPI, Alembic, подключение PostgreSQL и Redis, базовая конфигурация
+2 | Модели БД | SQLAlchemy модели всех таблиц, Alembic миграции, seed данных (категории, шаблоны)
+3 | Auth | Регистрация, вход, JWT логика, refresh, logout, middleware
+4 | Приглашения | CRUD приглашений, проверка editable_until, генерация slug, детали и кастомные поля
+5 | Медиа | Загрузка/удаление фото через S3/R2, сжатие, генерация thumbnail
+6 | AI | Интеграция Groq API, построение промпта, эндпоинт генерации текста
+7 | RSVP | Сохранение ответов гостей, дедупликация, rate limiting через Redis
+8 | Оплата | Интеграция Kaspi, webhook, изменение статуса invitation после оплаты

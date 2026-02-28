@@ -1,0 +1,118 @@
+=== PARAGRAPHS ===
+[Unknown] ТЕХНИЧЕСКОЕ ЗАДАНИЕ
+[Unknown] Платформа онлайн-приглашений
+[Unknown] для казахской культуры
+[Heading 1] Содержание
+[Heading 1] 1. Общее описание проекта
+[Unknown] Веб-приложение для создания и распространения цифровых приглашений на мероприятия, адаптированное под казахскую культуру и традиции. Платформа предоставляет пользователям готовые шаблоны, AI-генерацию текста приглашений на основе введённых данных, сбор ответов гостей (RSVP) и личный кабинет с аналитикой.
+[Heading 2] 1.1 Цели проекта
+[List Paragraph] Предоставить простой инструмент создания красивых цифровых приглашений без дизайнерских навыков
+[List Paragraph] Автоматизировать сбор ответов гостей (придут / не придут, количество человек)
+[List Paragraph] Поддержать казахские культурные традиции (той, кыз узату, сүндет той и др.)
+[List Paragraph] Монетизация через оплату публикации и распространения приглашений
+[Heading 2] 1.2 Основные характеристики
+[Heading 1] 2. Роли пользователей и сценарии использования
+[Heading 2] 2.1 Роли
+[Heading 2] 2.2 Ключевые сценарии (User Stories)
+[Heading 3] Сценарий 1: Создание приглашения
+[List Paragraph] Пользователь регистрируется / входит в систему
+[List Paragraph] Выбирает тип мероприятия (свадьба, день рождения, той и т.д.)
+[List Paragraph] Выбирает шаблон оформления из каталога
+[List Paragraph] Заполняет форму: имена, дата, место, контакты
+[List Paragraph] Нажимает «Сгенерировать текст» — Groq AI создаёт текст приглашения
+[List Paragraph] Пользователь редактирует текст или пишет вручную
+[List Paragraph] Загружает фотографии (опционально)
+[List Paragraph] Сохраняет приглашение (статус: черновик)
+[Heading 3] Сценарий 2: Публикация и шаринг
+[List Paragraph] Пользователь нажимает «Опубликовать»
+[List Paragraph] Система перенаправляет на страницу оплаты (Kaspi Pay)
+[List Paragraph] После успешной оплаты приглашение получает статус published
+[List Paragraph] Пользователь получает уникальную ссылку вида /invite/nurlan-aigerim-wedding
+[List Paragraph] Ссылку можно скопировать и отправить в WhatsApp / Telegram
+[Heading 3] Сценарий 3: Гость открывает приглашение
+[List Paragraph] Гость переходит по ссылке (без регистрации)
+[List Paragraph] Видит оформленную страницу с информацией о мероприятии, фото, картой
+[List Paragraph] Заполняет форму RSVP: имя, телефон, придёт ли, количество человек, пожелание
+[List Paragraph] Организатор видит ответ в личном кабинете
+[Heading 1] 3. Структурная схема приложения
+[Heading 2] 3.1 Архитектура системы
+[Heading 2] 3.2 Структура страниц (Frontend)
+[Heading 1] 4. Функциональная схема
+[Heading 2] 4.1 Процесс создания и публикации приглашения
+[Heading 2] 4.2 Процесс RSVP (гость)
+[Heading 1] 5. База данных — PostgreSQL
+[Unknown] СУБД: PostgreSQL 15+. ORM: SQLAlchemy (async). Миграции: Alembic.
+[Heading 2] 5.1 Таблица users — Пользователи
+[Heading 2] 5.2 Таблица refresh_tokens — JWT Рефреш Токены
+[Heading 2] 5.3 Таблица event_categories — Категории Мероприятий
+[Unknown] Предустановленные категории:
+[List Paragraph] wedding — Той / Свадьба
+[List Paragraph] birthday — Туған күн / День рождения
+[List Paragraph] anniversary — Мерейтой / Юбилей
+[List Paragraph] sundet_toi — Сүндет той (обрезание)
+[List Paragraph] kyz_uzatu — Қыз ұзату (проводы невесты)
+[List Paragraph] baby_shower — Бесік той (праздник новорождённого)
+[List Paragraph] corporate — Корпоратив
+[List Paragraph] graduation — Бітіру тойы / Выпускной
+[List Paragraph] other — Басқа / Другое
+[Heading 2] 5.4 Таблица templates — Шаблоны Оформления
+[Unknown] Пример поля config (JSONB):
+[Heading 2] 5.5 Таблица invitations — Приглашения (главная таблица)
+[Heading 2] 5.6 Таблица invitation_details — Детали Мероприятия
+[Unknown] Пример custom_fields для свадьбы (wedding):
+[Heading 2] 5.7 Таблица invitation_media — Фотографии
+[Heading 2] 5.8 Таблица rsvp_questions — Вопросы к Гостям
+[Heading 2] 5.9 Таблица rsvp_responses — Ответы Гостей
+[Heading 2] 5.10 Таблица payment_plans — Тарифные Планы
+[Heading 2] 5.11 Таблица payments — Платежи
+[Heading 1] 6. API Эндпоинты (Backend)
+[Unknown] Base URL: /api/v1 | Формат: JSON | Авторизация: Bearer JWT в httpOnly cookie
+[Heading 2] 6.1 Авторизация — /auth
+[Heading 2] 6.2 Публичные эндпоинты — без авторизации
+[Heading 2] 6.3 Приглашения — /my/invitations
+[Heading 2] 6.4 AI Генерация — /ai
+[Unknown] Тело запроса POST /ai/generate-text:
+[Heading 2] 6.5 Оплата — /payment
+[Heading 1] 7. Структура проекта — Backend
+[Heading 1] 8. Требования к Frontend (Next.js 14)
+[Unknown] Стек: Next.js 14 (App Router), TypeScript, Tailwind CSS, React Hook Form, Zustand (state), Axios.
+[Heading 2] 8.1 Страницы и компоненты
+[Heading 2] 8.2 Авторизация на фронтенде
+[List Paragraph] Access token и refresh token хранятся в httpOnly cookies (устанавливаются сервером)
+[List Paragraph] Все защищённые API-запросы автоматически включают cookie
+[List Paragraph] При 401 ответе — автоматически вызывать /auth/refresh
+[List Paragraph] После успешного refresh — повторить исходный запрос
+[List Paragraph] При неуспешном refresh — redirect на /auth/login
+[List Paragraph] Middleware Next.js: проверять наличие access_token cookie для защищённых маршрутов /dashboard/*
+[Heading 2] 8.3 Блок AI-генерации текста (шаг 3 мастера)
+[List Paragraph] Кнопка «Сгенерировать текст приглашения» — POST /api/v1/ai/generate-text
+[List Paragraph] Показывать скелетон / лоадер во время генерации (2–4 сек)
+[List Paragraph] Полученный текст вставлять в редактируемое textarea
+[List Paragraph] Пользователь может редактировать текст или нажать «Сгенерировать снова»
+[List Paragraph] Кнопка «Написать самому» — пустое textarea
+[List Paragraph] Сохранённый текст передаётся в поле invitation_details.invitation_text
+[Heading 2] 8.4 Публичная страница приглашения /invite/[slug]
+[List Paragraph] SSR (Server Side Rendering) — страница рендерится на сервере для SEO и OpenGraph
+[List Paragraph] Мета-теги: og:title, og:description, og:image (превью приглашения)
+[List Paragraph] Блок «О событии»: имена, дата, время, место, описание
+[List Paragraph] Галерея фото: круговое отображение (display_style = circle) через CSS clip-path или border-radius
+[List Paragraph] Карта / Адрес: если venue_map_url задан — кнопка «Открыть в 2GIS», иначе только текстовый адрес
+[List Paragraph] Форма RSVP: валидация на клиенте, подтверждение отправки, блокировка повторной отправки
+[Heading 2] 8.5 Структура проекта Frontend
+[Heading 1] 9. Интеграция Groq AI
+[Heading 2] 9.1 Параметры
+[Heading 2] 9.2 Логика промпта
+[Unknown] Промпт формируется динамически на основе введённых пользователем данных. Модель получает инструкцию сгенерировать тёплый, торжественный текст приглашения на выбранном языке (kk/ru/en) с учётом казахских культурных традиций.
+[Heading 1] 10. Безопасность
+[Heading 2] 10.1 JWT токены
+[Heading 2] 10.2 Прочие меры защиты
+[List Paragraph] Пароли: bcrypt с cost factor 12
+[List Paragraph] Rate limiting: Redis — максимум 5 RSVP с одного IP в час
+[List Paragraph] CORS: разрешён только домен фронтенда
+[List Paragraph] SQL Injection: исключён через SQLAlchemy ORM (параметризованные запросы)
+[List Paragraph] XSS: Next.js автоматически экранирует вывод, дополнительно — Content-Security-Policy
+[List Paragraph] Проверка editable_until: сервер отклоняет PUT с кодом 403 если срок истёк
+[List Paragraph] Webhook Kaspi: проверка HMAC подписи перед обработкой
+[Heading 1] 11. Переменные окружения
+[Heading 1] 12. Бизнес-правила и ограничения
+[Heading 1] 13. Порядок разработки (Backend)

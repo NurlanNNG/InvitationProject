@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from pwdlib import PasswordHash
+
 from app.auth.models import User
 from app.auth.schemas import TokenData
 from app.config import settings
@@ -31,7 +32,7 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(
-    subject: Union[str, Any], expires_delta: timedelta | None = None
+    subject: Union[str, Any], expires_delta: Optional[timedelta] = None
 ) -> str:
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -44,7 +45,7 @@ def create_access_token(
 
 
 def create_refresh_token(
-    subject: Union[str, Any], expires_delta: timedelta | None = None
+    subject: Union[str, Any], expires_delta: Optional[timedelta] = None
 ) -> str:
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -96,9 +97,7 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    result = await db.execute(
-        select(User).where(User.username == token_data.username)
-    )
+    result = await db.execute(select(User).where(User.username == token_data.username))
     user = result.scalar_one_or_none()
 
     if user is None:
@@ -108,5 +107,16 @@ async def get_current_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Пользователь неактивен",
         )
-
     return user
+
+
+async def get_current_admin_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Dependency that requires the current user to be an admin."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав доступа",
+        )
+    return current_user
