@@ -5,7 +5,6 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.logging_config import setup_logging
-
 # ─── Setup logging first ─────────────────────────────────────────────────────
 setup_logging(settings.LOGS_DIR)
 

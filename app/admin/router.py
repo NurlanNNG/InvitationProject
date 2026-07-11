@@ -160,6 +160,28 @@ async def update_category(
     return cat
 
 
+@router.patch("/categories/{category_id}", response_model=CategoryOut)
+async def patch_category(
+    category_id: int,
+    data: CategoryUpdate,
+    admin: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(EventCategory).where(EventCategory.id == category_id))
+    cat = result.scalar_one_or_none()
+    if not cat:
+        raise HTTPException(404, "Категория не найдена")
+
+    for field, value in data.model_dump(exclude_none=True).items():
+        setattr(cat, field, value)
+    cat.updated_by_id = admin.id
+
+    await db.commit()
+    await db.refresh(cat)
+    logger.info("Category patched: id=%s admin=%s", category_id, admin.username)
+    return cat
+
+
 @router.delete("/categories/{category_id}", status_code=204)
 async def delete_category(
     category_id: int,
@@ -212,6 +234,30 @@ async def update_template(
     await db.commit()
     await db.refresh(tpl)
     logger.info("Template updated: id=%s admin=%s", template_id, admin.username)
+    return tpl
+
+
+@router.patch("/templates/{template_id}", response_model=TemplateOut)
+async def patch_template(
+    template_id: uuid.UUID,
+    data: TemplateUpdate,
+    admin: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(InvitationTemplate).where(InvitationTemplate.id == template_id)
+    )
+    tpl = result.scalar_one_or_none()
+    if not tpl:
+        raise HTTPException(404, "Шаблон не найден")
+
+    for field, value in data.model_dump(exclude_none=True).items():
+        setattr(tpl, field, value)
+    tpl.updated_by_id = admin.id
+
+    await db.commit()
+    await db.refresh(tpl)
+    logger.info("Template patched: id=%s admin=%s", template_id, admin.username)
     return tpl
 
 
