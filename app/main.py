@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -33,6 +34,40 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+)
+
+# ─── CORS Middleware Configuration ──────────────────────────────────────────
+def _normalize_origin(origin: str) -> str:
+    return origin.strip().rstrip("/")
+
+
+def _cors_origins() -> list[str]:
+    configured_origins = [
+        *settings.CORS_ORIGINS.split(","),
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        settings.FRONTEND_URL,
+        settings.FRONTEND_VERCEL,
+        settings.FRONTEND_HOSTING,
+    ]
+
+    origins: list[str] = []
+    for origin in configured_origins:
+        normalized = _normalize_origin(origin)
+        if normalized and normalized not in origins:
+            origins.append(normalized)
+    return origins
+
+
+# Define the origins that are allowed to make cross-origin requests.
+origins = _cors_origins()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Allowed origins
+    allow_credentials=True,  # Allow cookies and auth headers
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
 
 # Serve uploaded media files as static files
