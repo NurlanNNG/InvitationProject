@@ -20,8 +20,10 @@ class InvitationTemplate(Base):
     )  # Категория мероприятия, к которой относится шаблон
     name_kk: Mapped[str] = mapped_column(String(150), nullable=False)  # Название шаблона на казахском языке
     name_ru: Mapped[str] = mapped_column(String(150), nullable=False)  # Название шаблона на русском языке
-    preview_url: Mapped[str] = mapped_column(Text, nullable=False)  # Ссылка на полное превью-изображение шаблона
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Текстовое описание шаблона для пользователей
+    preview_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # URL загруженного превью-изображения шаблона
     thumbnail_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Ссылка на миниатюру шаблона для отображения в списке
+    images: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)  # Список URL примеров изображений (галерея шаблона)
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # Настройки дизайна шаблона: цвета, шрифты, расположение элементов
     is_premium: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # Является ли шаблон премиальным (требует оплаты по тарифу)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)  # Доступен ли шаблон для выбора пользователями

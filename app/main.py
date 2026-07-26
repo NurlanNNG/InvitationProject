@@ -12,6 +12,7 @@ setup_logging(settings.LOGS_DIR)
 # ─── Create media directories ─────────────────────────────────────────────────
 Path(settings.MEDIA_DIR).mkdir(parents=True, exist_ok=True)
 Path(settings.MEDIA_THUMBS_DIR).mkdir(parents=True, exist_ok=True)
+Path(settings.TEMPLATES_DIR).mkdir(parents=True, exist_ok=True)
 
 # ─── Import routers ───────────────────────────────────────────────────────────
 from app.auth.router import router as auth_router

@@ -1,11 +1,13 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.logging_config import get_logger
 from app.auth.models import User
@@ -17,6 +19,17 @@ from app.categories.models import EventCategory
 from app.categories.schemas import CategoryCreate, CategoryUpdate, CategoryOut
 from app.inv_templates.models import InvitationTemplate
 from app.inv_templates.schemas import TemplateCreate, TemplateUpdate, TemplateOut
+
+TEMPLATE_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+TEMPLATE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _save_template_file(contents: bytes, original_filename: str) -> str:
+    ext = Path(original_filename or "image.jpg").suffix.lower() or ".jpg"
+    filename = f"{uuid.uuid4()}{ext}"
+    dest = Path(settings.TEMPLATES_DIR) / filename
+    dest.write_bytes(contents)
+    return f"{settings.MEDIA_BASE_URL}/templates/{filename}"
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 logger = get_logger("admin")
@@ -276,6 +289,107 @@ async def delete_template(
     await db.delete(tpl)
     await db.commit()
     logger.info("Template deleted: id=%s admin=%s", template_id, admin.username)
+
+
+@router.post("/templates/{template_id}/preview", response_model=TemplateOut)
+async def upload_template_preview(
+    template_id: uuid.UUID,
+    file: UploadFile = File(...),
+    admin: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload (or replace) the preview image for a template."""
+    result = await db.execute(
+        select(InvitationTemplate).where(InvitationTemplate.id == template_id)
+    )
+    tpl = result.scalar_one_or_none()
+    if not tpl:
+        raise HTTPException(404, "Шаблон не найден")
+
+    if file.content_type not in TEMPLATE_ALLOWED_TYPES:
+        raise HTTPException(400, f"Допустимые форматы: jpeg, png, webp")
+
+    contents = await file.read()
+    if len(contents) > TEMPLATE_MAX_BYTES:
+        raise HTTPException(400, "Файл слишком большой. Максимум 10 МБ")
+
+    tpl.preview_url = _save_template_file(contents, file.filename or "preview.jpg")
+    tpl.updated_by_id = admin.id
+    await db.commit()
+    await db.refresh(tpl)
+    logger.info("Template preview uploaded: id=%s admin=%s", template_id, admin.username)
+    return tpl
+
+
+@router.post("/templates/{template_id}/images", response_model=TemplateOut)
+async def upload_template_image(
+    template_id: uuid.UUID,
+    file: UploadFile = File(...),
+    admin: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload an example image and append its URL to the template's images list."""
+    result = await db.execute(
+        select(InvitationTemplate).where(InvitationTemplate.id == template_id)
+    )
+    tpl = result.scalar_one_or_none()
+    if not tpl:
+        raise HTTPException(404, "Шаблон не найден")
+
+    if file.content_type not in TEMPLATE_ALLOWED_TYPES:
+        raise HTTPException(400, "Допустимые форматы: jpeg, png, webp")
+
+    contents = await file.read()
+    if len(contents) > TEMPLATE_MAX_BYTES:
+        raise HTTPException(400, "Файл слишком большой. Максимум 10 МБ")
+
+    url = _save_template_file(contents, file.filename or "image.jpg")
+    current_images = list(tpl.images or [])
+    current_images.append(url)
+    tpl.images = current_images
+    tpl.updated_by_id = admin.id
+    await db.commit()
+    await db.refresh(tpl)
+    logger.info("Template image uploaded: id=%s admin=%s url=%s", template_id, admin.username, url)
+    return tpl
+
+
+@router.delete("/templates/{template_id}/images/{image_index}", response_model=TemplateOut)
+async def delete_template_image(
+    template_id: uuid.UUID,
+    image_index: int,
+    admin: User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove an example image by its index in the images list."""
+    result = await db.execute(
+        select(InvitationTemplate).where(InvitationTemplate.id == template_id)
+    )
+    tpl = result.scalar_one_or_none()
+    if not tpl:
+        raise HTTPException(404, "Шаблон не найден")
+
+    current_images = list(tpl.images or [])
+    if image_index < 0 or image_index >= len(current_images):
+        raise HTTPException(400, f"Индекс {image_index} вне диапазона (0–{len(current_images) - 1})")
+
+    removed_url = current_images.pop(image_index)
+    tpl.images = current_images
+    tpl.updated_by_id = admin.id
+    await db.commit()
+    await db.refresh(tpl)
+
+    # Delete physical file
+    try:
+        filename = Path(removed_url).name
+        target = Path(settings.TEMPLATES_DIR) / filename
+        if target.exists():
+            target.unlink()
+    except Exception as e:
+        logger.warning("Could not delete template image file: %s", e)
+
+    logger.info("Template image deleted: id=%s index=%s admin=%s", template_id, image_index, admin.username)
+    return tpl
 
 
 # ─── Payment plan management ─────────────────────────────────────────────────

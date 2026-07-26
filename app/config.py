@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # File storage (local)
     MEDIA_DIR: str = "media/uploads"
     MEDIA_THUMBS_DIR: str = "media/thumbs"
+    TEMPLATES_DIR: str = "media/templates"
     MAX_FILE_SIZE_MB: int = 5
 
     # Logging
