@@ -29,19 +29,6 @@ class TemplateOut(BaseModel):
         return v if v is not None else []
 
 
-class TemplateCreate(BaseModel):
-    category_id: Optional[int] = None
-    name_kk: str
-    name_ru: str
-    description: Optional[str] = None
-    preview_url: Optional[str] = None
-    thumbnail_url: Optional[str] = None
-    images: Optional[List[str]] = None
-    config: dict = {}
-    is_premium: bool = False
-    sort_order: int = 0
-
-
 class TemplateUpdate(BaseModel):
     category_id: Optional[int] = None
     name_kk: Optional[str] = None

@@ -1,9 +1,10 @@
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +19,7 @@ from app.payments.schemas import PaymentOut, PaymentPlanOut
 from app.categories.models import EventCategory
 from app.categories.schemas import CategoryCreate, CategoryUpdate, CategoryOut
 from app.inv_templates.models import InvitationTemplate
-from app.inv_templates.schemas import TemplateCreate, TemplateUpdate, TemplateOut
+from app.inv_templates.schemas import TemplateOut, TemplateUpdate
 
 TEMPLATE_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 TEMPLATE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -30,6 +31,25 @@ def _save_template_file(contents: bytes, original_filename: str) -> str:
     dest = Path(settings.TEMPLATES_DIR) / filename
     dest.write_bytes(contents)
     return f"{settings.MEDIA_BASE_URL}/templates/{filename}"
+
+
+async def _validate_and_save_upload(file: UploadFile) -> str:
+    if file.content_type not in TEMPLATE_ALLOWED_TYPES:
+        raise HTTPException(400, "Допустимые форматы: jpeg, png, webp")
+    contents = await file.read()
+    if len(contents) > TEMPLATE_MAX_BYTES:
+        raise HTTPException(400, "Файл слишком большой. Максимум 10 МБ")
+    return _save_template_file(contents, file.filename or "image.jpg")
+
+
+def _parse_template_config(config: Optional[str]) -> dict:
+    if not config:
+        return {}
+    try:
+        return json.loads(config)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Поле config должно быть валидным JSON")
+
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 logger = get_logger("admin")
@@ -214,11 +234,37 @@ async def delete_category(
 
 @router.post("/templates", response_model=TemplateOut, status_code=201)
 async def create_template(
-    data: TemplateCreate,
+    name_kk: str = Form(...),
+    name_ru: str = Form(...),
+    category_id: Optional[int] = Form(None),
+    description: Optional[str] = Form(None),
+    config: Optional[str] = Form(None),
+    is_premium: bool = Form(False),
+    sort_order: int = Form(0),
+    preview: Optional[UploadFile] = File(None),
+    thumbnail: Optional[UploadFile] = File(None),
+    images: Optional[List[UploadFile]] = File(None),
     admin: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    tpl = InvitationTemplate(**data.model_dump(), created_by_id=admin.id, updated_by_id=admin.id)
+    preview_url = await _validate_and_save_upload(preview) if preview and preview.filename else None
+    thumbnail_url = await _validate_and_save_upload(thumbnail) if thumbnail and thumbnail.filename else None
+    image_urls = [await _validate_and_save_upload(img) for img in (images or []) if img.filename]
+
+    tpl = InvitationTemplate(
+        category_id=category_id,
+        name_kk=name_kk,
+        name_ru=name_ru,
+        description=description,
+        preview_url=preview_url,
+        thumbnail_url=thumbnail_url,
+        images=image_urls,
+        config=_parse_template_config(config),
+        is_premium=is_premium,
+        sort_order=sort_order,
+        created_by_id=admin.id,
+        updated_by_id=admin.id,
+    )
     db.add(tpl)
     await db.commit()
     await db.refresh(tpl)
@@ -253,7 +299,17 @@ async def update_template(
 @router.patch("/templates/{template_id}", response_model=TemplateOut)
 async def patch_template(
     template_id: uuid.UUID,
-    data: TemplateUpdate,
+    name_kk: Optional[str] = Form(None),
+    name_ru: Optional[str] = Form(None),
+    category_id: Optional[int] = Form(None),
+    description: Optional[str] = Form(None),
+    config: Optional[str] = Form(None),
+    is_premium: Optional[bool] = Form(None),
+    is_active: Optional[bool] = Form(None),
+    sort_order: Optional[int] = Form(None),
+    preview: Optional[UploadFile] = File(None),
+    thumbnail: Optional[UploadFile] = File(None),
+    images: Optional[List[UploadFile]] = File(None),
     admin: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -264,8 +320,37 @@ async def patch_template(
     if not tpl:
         raise HTTPException(404, "Шаблон не найден")
 
-    for field, value in data.model_dump(exclude_none=True).items():
-        setattr(tpl, field, value)
+    if name_kk is not None:
+        tpl.name_kk = name_kk
+    if name_ru is not None:
+        tpl.name_ru = name_ru
+    if category_id is not None:
+        tpl.category_id = category_id
+    if description is not None:
+        tpl.description = description
+    if config is not None:
+        tpl.config = _parse_template_config(config)
+    if is_premium is not None:
+        tpl.is_premium = is_premium
+    if is_active is not None:
+        tpl.is_active = is_active
+    if sort_order is not None:
+        tpl.sort_order = sort_order
+
+    if preview and preview.filename:
+        tpl.preview_url = await _validate_and_save_upload(preview)
+    if thumbnail and thumbnail.filename:
+        tpl.thumbnail_url = await _validate_and_save_upload(thumbnail)
+
+    # Uploaded images are appended to the existing gallery; if none are
+    # uploaded, the gallery is left untouched.
+    new_images = [img for img in (images or []) if img.filename]
+    if new_images:
+        current_images = list(tpl.images or [])
+        for img in new_images:
+            current_images.append(await _validate_and_save_upload(img))
+        tpl.images = current_images
+
     tpl.updated_by_id = admin.id
 
     await db.commit()
@@ -306,14 +391,7 @@ async def upload_template_preview(
     if not tpl:
         raise HTTPException(404, "Шаблон не найден")
 
-    if file.content_type not in TEMPLATE_ALLOWED_TYPES:
-        raise HTTPException(400, f"Допустимые форматы: jpeg, png, webp")
-
-    contents = await file.read()
-    if len(contents) > TEMPLATE_MAX_BYTES:
-        raise HTTPException(400, "Файл слишком большой. Максимум 10 МБ")
-
-    tpl.preview_url = _save_template_file(contents, file.filename or "preview.jpg")
+    tpl.preview_url = await _validate_and_save_upload(file)
     tpl.updated_by_id = admin.id
     await db.commit()
     await db.refresh(tpl)
@@ -336,14 +414,7 @@ async def upload_template_image(
     if not tpl:
         raise HTTPException(404, "Шаблон не найден")
 
-    if file.content_type not in TEMPLATE_ALLOWED_TYPES:
-        raise HTTPException(400, "Допустимые форматы: jpeg, png, webp")
-
-    contents = await file.read()
-    if len(contents) > TEMPLATE_MAX_BYTES:
-        raise HTTPException(400, "Файл слишком большой. Максимум 10 МБ")
-
-    url = _save_template_file(contents, file.filename or "image.jpg")
+    url = await _validate_and_save_upload(file)
     current_images = list(tpl.images or [])
     current_images.append(url)
     tpl.images = current_images
